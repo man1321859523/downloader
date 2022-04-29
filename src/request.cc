@@ -7,6 +7,14 @@
 
 #define BUFFER_SIZE 2048
 
+struct ResponseHeader{
+	int status_code;
+	char* content_type;
+	long content_length;
+	long range_start;
+	long range_end;
+};
+
 class Urlparser{
 public:
 	Urlparser(){}
@@ -107,7 +115,35 @@ public:
 	        "Range: bytes=%ld-%ld\r\n"\
         	"\r\n"\
     	,m_url ,m_domainName, Min, Max);
+	}
+
+	void getResponseHeader(int _sockfd) {
+		int len = 0;
+		len = recv(_sockfd, m_buffer, BUFFER_SIZE-1, 0);
+		std::cout << len << std::endl;
+		parseResponseHeader();
+		std::cout << "status_code:" << m_ResponseHeader.status_code << std::endl;
 	}	
+
+	void parseResponseHeader() {
+		/*获取响应头的信息*/
+	    char *pos = strstr(m_buffer, "HTTP/");
+	    if (pos)//获取返回代码
+	        sscanf(pos, "%*s %d", &m_ResponseHeader.status_code);
+
+	    pos = strstr(m_buffer, "Content-Type:");
+	    if (pos)//获取返回文档类型
+	        sscanf(pos, "%*s %s", m_ResponseHeader.content_type);
+
+	    pos = strstr(m_buffer, "Content-Length:");
+	    if (pos)//获取返回文档长度
+	        sscanf(pos, "%*s %ld", &m_ResponseHeader.content_length);
+
+	    pos = strstr(m_buffer, "Content-Range:");
+	    if (pos)//获取返回文件区间
+	        sscanf(pos, "%*s %*s %ld-%ld/%ld", 
+	        	&m_ResponseHeader.range_start, &m_ResponseHeader.range_end, &m_ResponseHeader.content_length);
+	}
 
 public:
 	char m_url[255];
@@ -116,34 +152,35 @@ public:
 	int m_port;
 	char m_fileName[255];
 	char m_buffer[BUFFER_SIZE];
+	ResponseHeader m_ResponseHeader;
 };
 
 
 int main(int argc, char* argv[]) {
 	
-	Urlparser url;
+	Urlparser * url;
 
 	if(argc < 2) {
 		std::cout << "wrong number of arguments." << std::endl;
 		exit(1);
 	} else if(argc == 2) {
 		if (*argv[1] != '.' && (*argv[1] > '9' || *argv[1] < '0')) {
-			url = Urlparser(argv[1]);
-			std::cout << url.m_ip << std::endl; 
+			url = new Urlparser(argv[1]);
+			std::cout << url->m_ip << std::endl; 
 		} else {
 			std::cout << "wrong url format." << std::endl;
 			exit(1);
 		}
 	} else {
-		url = Urlparser(argv[1], argv[2]);
-		std::cout << url.m_ip << std::endl; 
+		url = new Urlparser(argv[1], argv[2]);
+		std::cout << url->m_ip << std::endl; 
 	}
 	
 	struct sockaddr_in server_addr;
 	bzero(&server_addr, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	inet_pton(AF_INET, url.m_ip, &server_addr.sin_addr);
-	server_addr.sin_port = htons(url.m_port);
+	inet_pton(AF_INET, url->m_ip, &server_addr.sin_addr);
+	server_addr.sin_port = htons(url->m_port);
 
 	int sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (sock < 0) {
@@ -153,12 +190,15 @@ int main(int argc, char* argv[]) {
 	
 	if(connect(sock, (struct sockaddr*)& server_addr, sizeof(server_addr)) != -1) {
 		// 向buffer中写入数据
-		url.getHttpHead(0, 0);
-		std::cout << url.m_buffer << std::endl;
-		send(sock, url.m_buffer, strlen(url.m_buffer), 0);
+		url->getHttpHead(0, 0);
+		std::cout << url->m_buffer << std::endl;
+		send(sock, url->m_buffer, strlen(url->m_buffer), 0);
+		url->getResponseHeader(sock);
+		std::cout << url->m_buffer << std::endl;
 	}
 	shutdown(sock, SHUT_RDWR);
-	
+	delete url;
+
 	return 0;
 }
 
@@ -180,21 +220,3 @@ int main(int argc, char* argv[]) {
 */
 
 // void getHttpHead(long range_start, long range_end);
-/*
-void getHttpHead(long range_start, long range_end) {
-	//设置http请求头信息
-	int Max = std::max(range_start, range_end);	//为了解决请求报文长度异常的bug
-	int Min = std::min(range_start, range_end);
-	std::cout << "okay" << std::endl;
-    sprintf(m_buffer, \
-    	"GET %s HTTP/1.1\r\n"\
-    	*/
-        //"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n"\
-        "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537(KHTML, like Gecko) Chrome/47.0.2526Safari/537.36\r\n"\
-        "Host: %s\r\n"\
-        "Connection: keep-alive\r\n"\
-        "Range: bytes=%ld-%ld\r\n"\
-        "\r\n"\
-    ,m_url ,&m_domainName, Min,Max);
-//}	
-
